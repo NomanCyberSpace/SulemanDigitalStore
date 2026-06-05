@@ -119,3 +119,13 @@ async function startBot() {
 }
 
 startBot();
+
+// DUMMY SERVER FOR RENDER FREE TIER PORT BINDING
+const http = require("http");
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Bot is Running Live!\n");
+}).listen(PORT, () => {
+    console.log(`🤖 Dummy Web Server is live on port ${PORT}`);
+});
