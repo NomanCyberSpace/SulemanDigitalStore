@@ -2,10 +2,6 @@ const { getPuterResponse } = require("./puter-ai");
 const { saveOrder, getMenu } = require("./order-db");
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
-const readline = require("readline");
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 const msgCache = new Map();
 
@@ -17,7 +13,7 @@ async function startBot() {
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
-            printQRInTerminal: false,
+            printQRInTerminal: false, // Cloud par QR nahi chahiye
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -27,11 +23,28 @@ async function startBot() {
 
         sock.ev.on("creds.update", saveCreds);
 
+        // CLOUD PAIRING CODE GENERATION WITHOUT READLINE
         if (!sock.authState.creds.registered) {
-            console.log("\n⚠️  No active session found. Let's link your account.");
-            const phoneNumber = await question("Enter your WhatsApp number (with country code, e.g., 923462809972): ");
-            const code = await sock.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ""));
-            console.log(`\n✅ YOUR PAIRING CODE: ${code}\n`);
+            console.log("\n⚠️ No active session found. Attempting to generate pairing code...");
+            
+            // Render variable se number uthayega ya default use karega
+            const rawPhoneNumber = process.env.WHATSAPP_NUMBER || "923462809972"; 
+            const phoneNumber = rawPhoneNumber.replace(/[^0-9]/g, "");
+
+            if (!phoneNumber) {
+                console.log("❌ Error: WHATSAPP_NUMBER environment variable is missing!");
+            } else {
+                setTimeout(async () => {
+                    try {
+                        const code = await sock.requestPairingCode(phoneNumber);
+                        console.log("\n========================================");
+                        console.log(`✅ YOUR WAITSAPP PAIRING CODE: ${code}`);
+                        console.log("========================================\n");
+                    } catch (pairingError) {
+                        console.error("❌ Error generating pairing code:", pairingError.message);
+                    }
+                }, 10000); // 10 seconds delay taake connection establish ho sake
+            }
         }
 
         sock.ev.on("connection.update", async (update) => {
@@ -69,10 +82,7 @@ async function startBot() {
 
             try {
                 const dynamicMenu = await getMenu();
-                
-                // FIXED: 'text' ko direct pass kiya, history push AI response ke BAAD hogi taake duplicate context na bane
                 const aiResponse = await getPuterResponse(text, history, dynamicMenu);
-                
                 let cleanReply = aiResponse;
 
                 if (aiResponse.includes("FINAL_ORDER_START")) {
@@ -103,7 +113,6 @@ async function startBot() {
 
                 await sock.sendMessage(sender, { text: cleanReply });
                 
-                // AI Response send hone ke baad memory track karein
                 history.push({ role: "user", content: text });
                 history.push({ role: "assistant", content: aiResponse });
                 
