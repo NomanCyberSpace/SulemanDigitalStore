@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: db-restaurant-bot
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
