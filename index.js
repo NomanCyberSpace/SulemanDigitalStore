@@ -129,12 +129,26 @@ async function startBot() {
 
 startBot();
 
-// DUMMY SERVER FOR RENDER FREE TIER PORT BINDING
+// SELF-PING DUMMY SERVER TO BYPASS CLOUDFARE & RENDER SLEEP
 const http = require("http");
+const https = require("https");
+
 const PORT = process.env.PORT || 3000;
+const MY_RENDER_URL = "https://restaurant-bot-free.onrender.com"; // ⚠️ Agar aapka link mukhtalif hai toh sahi kar lein
+
+// 1. Dummy Web Server
 http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Bot is Running Live!\n");
+    res.end("Bot is Active and Running!\n");
 }).listen(PORT, () => {
-    console.log(`🤖 Dummy Web Server is live on port ${PORT}`);
+    console.log(`🤖 Dummy Web Server live on port ${PORT}`);
 });
+
+// 2. Self-Ping Interval (Har 10 minute baad khud ko call karega)
+setInterval(() => {
+    https.get(MY_RENDER_URL, (res) => {
+        console.log(`🔄 Self-Ping sent successfully! Status Code: ${res.statusCode}`);
+    }).on('error', (e) => {
+        console.error(`❌ Self-Ping failed: ${e.message}`);
+    });
+}, 10 * 60 * 1000); // 10 minutes in milliseconds
