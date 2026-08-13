@@ -1,6 +1,6 @@
 const { getPuterResponse } = require("./puter-ai");
 const { saveOrder, getMenu, saveReport, saveHumanRequest, supabase } = require("./order-db");
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason, generateWAMessageFromContent, proto } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
 
@@ -12,6 +12,53 @@ const PORT = process.env.PORT || 3000;
 const processedMsgs = new Set();
 const userState = new Map(); 
 let sock;
+
+// Safepay Checkout Link Generator
+function createSafepayCheckoutUrl(orderId, amount) {
+    const environment = process.env.SAFEPAY_ENVIRONMENT || "sandbox";
+    const publicKey = process.env.SAFEPAY_PUBLIC_KEY || "sec_2dc78e96-c17b-406f-b5f2-747ebcbb5915";
+    
+    const baseUrl = environment === "sandbox" 
+        ? "https://sandbox.api.getsafepay.com/checkout/pay" 
+        : "https://api.getsafepay.com/checkout/pay";
+
+    const params = new URLSearchParams({
+        beacon: publicKey,
+        order_id: orderId.toString(),
+        amount: amount.toString(),
+        currency: "PKR",
+        source: "custom"
+    });
+
+    return `${baseUrl}?${params.toString()}`;
+}
+
+// Safepay Webhook Endpoint
+app.post("/safepay-webhook", async (req, res) => {
+    try {
+        const { tracker, order_id, status } = req.body;
+
+        if (status === "PAID" || status === "COMPLETED") {
+            const { data: updatedOrder } = await supabase
+                .from("orders")
+                .update({ payment_status: "paid" })
+                .eq("id", order_id)
+                .select()
+                .single();
+
+            if (updatedOrder && sock) {
+                const customerJid = `${updatedOrder.customer_phone}@s.whatsapp.net`;
+                await sock.sendMessage(customerJid, {
+                    text: `✅ *Payment Confirmed (Safepay)!*\n\nAap ka Order #${updatedOrder.id} successfully *PAID* ho chuka hai. Hamari team jald aap ko subscription credentials bhej degi. Shukriya!`
+                });
+            }
+        }
+        res.status(200).send("OK");
+    } catch (err) {
+        console.error("Safepay Webhook Error:", err.message);
+        res.status(500).send("Server Error");
+    }
+});
 
 app.get("/", (req, res) => res.send("Bot & Server Active!"));
 app.listen(PORT, () => console.log(`🤖 Server listening on port ${PORT}`));
@@ -98,70 +145,46 @@ async function startBot() {
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
+            // 🛑 PRIORITY 1: Report Input State
             if (currentState === "AWAITING_REPORT") {
                 const ticketNo = await saveReport(realCustomerPhone, text);
                 userState.delete(sender);
                 await sock.sendMessage(sender, { 
-                    text: `⚠️ *Issue Registered Successfully!*\n\nAap ka Token Number: *#${ticketNo}*\n\nHamari support team aap ka masla review kar rahi hai aur jald aap se rabta karegi. Shukriya!` 
+                    text: `⚠️ *Issue Registered Successfully!*\n\nAap ka Token Number: *#${ticketNo}*\n\nHamari support team aap ka masla review kar rahi hai aur jald aap se rabta karegi. Shukriya! 🌟` 
                 });
                 return;
             } 
             
+            // 🛑 PRIORITY 2: Human Support Input State
             if (currentState === "AWAITING_HUMAN") {
                 const ticketNo = await saveHumanRequest(realCustomerPhone, text);
                 userState.delete(sender);
                 await sock.sendMessage(sender, { 
-                    text: `💬 *Support Request Created!*\n\nAap ka Ticket Number: *#${ticketNo}*\n\nHuman agent ko notify kar diya gaya hai. Hamara representative jald aap ko message karega.` 
+                    text: `💬 *Support Request Created!*\n\nAap ka Ticket Number: *#${ticketNo}*\n\nHuman agent ko notify kar diya gaya hai. Hamara representative jald aap ko message karega. Shukriya! 🌟` 
                 });
                 return;
             }
 
-            const humanTriggerKeywords = ["cmd_human", "4", "human", "insani", "contact human", "agent"];
-            if (humanTriggerKeywords.some(kw => userCmd.includes(kw))) {
+            // 🛑 PRIORITY 3: Manual Trigger Handling
+            const humanTriggerKeywords = ["cmd_human", "3", "human", "insani", "contact human", "agent"];
+            if (humanTriggerKeywords.some(kw => userCmd === kw)) {
                 userState.set(sender, "AWAITING_HUMAN");
                 await sock.sendMessage(sender, { 
-                    text: "💬 *Contact Human Agent*\n\nAap apna paigham ya masla yahan tafseel se likhein, hum human agent ko ticket assign kar rahe hain:" 
+                    text: "💬 *Contact Human Agent*\n\nAap apna paigham ya masla yahan tafseel se likhein, hum human agent ko ticket assign kar rahe hain: 👇" 
                 });
                 return;
             }
 
-            const reportTriggerKeywords = ["cmd_report", "3", "report", "issue", "masla", "complaint"];
-            if (reportTriggerKeywords.some(kw => userCmd.includes(kw))) {
+            const reportTriggerKeywords = ["cmd_report", "2", "report", "issue", "masla", "complaint"];
+            if (reportTriggerKeywords.some(kw => userCmd === kw)) {
                 userState.set(sender, "AWAITING_REPORT");
                 await sock.sendMessage(sender, { 
-                    text: "📝 *Report an Issue*\n\nBaraye meherbani apne maslay ki tafseel likh kar bhejin taakay hum ticket create kar sakein:" 
+                    text: "📝 *Report an Issue*\n\nBaraye meherbani apne maslay ki tafseel likh kar bhejin taakay hum ticket create kar sakein: 👇" 
                 });
                 return;
             }
 
-            // GREETING WITH 4 OPTIONS
-            if (["hi", "hello", "hey", "start", "assalam-o-alaikum", "assalam o alaikum"].includes(userCmd)) {
-                const msgContent = generateWAMessageFromContent(sender, {
-                    viewOnceMessage: {
-                        message: {
-                            interactiveMessage: proto.Message.InteractiveMessage.create({
-                                body: proto.Message.InteractiveMessage.Body.create({
-                                    text: "Welcome to *Suleman Digital Store* 🛒✨\n\nMain aap ki kis tarah rehnumai kar sakta hoon? Niche diye gaye options mein se chunain:"
-                                }),
-                                footer: proto.Message.InteractiveMessage.Footer.create({ text: "Select an option below" }),
-                                nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                                    buttons: [
-                                        { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🛒 Services / Subscriptions", id: "cmd_buy_sub" }) },
-                                        { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🔥 Special Offers / Discounts", id: "cmd_offers" }) },
-                                        { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚠️ Report an Issue", id: "cmd_report" }) },
-                                        { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "📞 Contact Human Agent", id: "cmd_human" }) }
-                                    ]
-                                })
-                            })
-                        }
-                    }
-                }, { userJid: sender, quoted: msg });
-
-                await sock.relayMessage(sender, msgContent.message, { messageId: msgContent.key.id });
-                return;
-            }
-
-            // AI Flow Response
+            // ⚡ DIRECT AI RESPONDER (Instant First Message Reply)
             try {
                 if (!chatMemory.has(sender)) chatMemory.set(sender, []);
                 let history = chatMemory.get(sender);
@@ -189,6 +212,7 @@ async function startBot() {
                 }
 
                 await sock.sendMessage(sender, { text: cleanReply });
+
                 history.push({ role: "user", content: text }, { role: "assistant", content: aiResponse });
                 if (history.length > 20) history.splice(0, 2);
 
