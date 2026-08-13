@@ -1,6 +1,10 @@
-services:
-  - type: worker
-    name: db-restaurant-bot
+
+    services:
+  - type: web
+    name: suleman-digital-store-bot
     env: node
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000

@@ -1,50 +1,56 @@
-# Restaurant WhatsApp Bot
+# 🛒 Digital Subscriptions WhatsApp Bot & Admin Dashboard
 
-A WhatsApp bot for DB Restaurant using Baileys, MySQL, and Gemini AI.
+An automated WhatsApp bot for selling digital subscriptions (Netflix, Canva, Spotify, etc.) integrated with a real-time **Supabase** database and a lightweight **React Admin Dashboard**.
 
-## Features
-- Automated WhatsApp responses.
-- MySQL integration for menu and order management.
-- Gemini AI for natural language customer support.
-- Pairing code connection (no QR scan needed if preferred).
+---
 
-## Setup Instructions
+## 🌟 Key Features
 
-### 1. Prerequisites
-- Node.js installed.
-- MySQL Workbench installed and running.
-- Gemini API Key from [Google AI Studio](https://aistudio.google.com/).
+### 🤖 WhatsApp Bot
+* **Automated Product Catalog:** Fetches live stock and subscription prices directly from Supabase.
+* **Smart AI Conversations:** Handles customer queries using Puter AI.
+* **Order Processing:** Captures customer phone numbers, selected items, and logs pending orders automatically.
+* **Payment Instructions:** Binds payment details (NayaPay / Bank Transfer) directly into the chat.
+* **24/7 Cloud Support:** Built-in self-ping web server to prevent cloud hosts (e.g., Render) from sleeping.
 
-### 2. Database Setup
-1. Open MySQL Workbench.
-2. Run the commands in `schema.sql` to create the database and tables.
+### 📊 Admin Dashboard
+* **Secure Access:** Protected with a custom PIN/Passcode.
+* **Live Inventory Management:** Add new digital products, edit pricing, or update stock quantities in real time.
+* **Order Tracker:** View incoming WhatsApp orders and update status (`Pending`, `Paid`, `Delivered`).
+* **Zero Complex Setup:** Single-file standalone HTML/React application (hostable on Vercel/Netlify/GitHub Pages).
 
-### 3. Configuration
-1. Rename `.env.example` to `.env`.
-2. Fill in your credentials:
-   - `GEMINI_API_KEY`: Your Google Gemini API Key.
-   - `DB_PASSWORD`: Your MySQL password.
-   - `OWNER_NUMBER`: Your WhatsApp number in international format (e.g., `923462809972`).
+---
 
-### 4. Installation
-```bash
-pnpm install
-# OR
-npm install
-```
+## 🛠️ Tech Stack
 
-### 5. Running the Bot
-```bash
-node index.js
-```
-- The bot will provide a **Pairing Code**.
-- Enter this code in your WhatsApp: `Settings > Linked Devices > Link a Device > Link with phone number instead`.
+* **Bot Core:** Node.js, `@whiskeysockets/baileys`
+* **Database:** Supabase (PostgreSQL)
+* **AI Engine:** Puter AI Integration
+* **Dashboard:** React, Tailwind CSS, Supabase JS Client
 
-## Project Structure
-- `index.js`: Main bot logic and WhatsApp connection.
-- `db.js`: MySQL connection pool.
-- `gemini.js`: Gemini AI integration.
-- `restaurant-ai.js`: AI prompt engineering for the restaurant.
-- `restaurant-info.js`: Static restaurant data (menu, timing, etc.).
-- `schema.sql`: Database structure.
-- `test-*.js`: Scripts to test individual components.
+---
+
+## 🚀 Setup & Installation
+
+### 1. Database Setup (Supabase)
+1. Create a project at [Supabase](https://supabase.com).
+2. Go to **SQL Editor** and execute the following queries to create the tables:
+
+```sql
+CREATE TABLE products (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(10, 2) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    customer_phone VARCHAR(50) NOT NULL,
+    product_name VARCHAR(255),
+    amount DECIMAL(10, 2) NOT NULL,
+    payment_status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

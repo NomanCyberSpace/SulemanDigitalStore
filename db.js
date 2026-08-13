@@ -1,21 +1,10 @@
-const mysql = require("mysql2/promise");
+const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
-// Cloud Database configuration with environment variables or fallback to Aiven defaults
-const db = mysql.createPool({
-    host: process.env.DB_HOST || "mysql-1afe6f08-resturantbot.g.aivencloud.com",
-    user: process.env.DB_USER || "avnadmin",
-    password: process.env.DB_PASSWORD || "AVNS_XbEYcyweZdnYYxXXRHE", // ⚠️ Yahan apna Aiven wala real password paste kar den
-    database: process.env.DB_NAME || "defaultdb",
-    port: process.env.DB_PORT || 10775,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10000,
-    ssl: {
-        rejectUnauthorized: false // Aiven cloud connections ke liye SSL zaroori hota hai
-    }
-});
+// Dashboard HTML mein defined Credentials & URLs
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://kvcqsmqqcmlbgrtgoeca.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y3FzbXFxY21sYmdydGdvZWNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwMTMwMTksImV4cCI6MjEwMTU4OTAxOX0.BzNIMNu1LhEGAuvm8Wq1ka9hm-n6yq7VNjrO6m2vgdE";
 
-module.exports = db;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+module.exports = { supabase };

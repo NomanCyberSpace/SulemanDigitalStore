@@ -1,26 +1,17 @@
 {
-  "name": "resturant-bot",
+  "name": "suleman-digital-store-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Automated WhatsApp Bot for Suleman Digital Store",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@heyputer/puter.js": "latest",
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
-    "awesome-phonenumber": "^7.8.0",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "groq-sdk": "^1.2.1",
-    "mongoose": "^9.6.3",
-    "mysql2": "^3.22.4",
-    "node-cache": "^5.1.2",
+    "@heyputer/puter.js": "^2.6.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "@whiskeysockets/baileys": "^6.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0"
   }
