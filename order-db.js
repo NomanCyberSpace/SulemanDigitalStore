@@ -34,18 +34,44 @@ async function getMenu() {
 
 async function saveOrder(orderData) {
     try {
-        const { data, error } = await supabase.from("orders").insert([
-            {
-                customer_phone: orderData.phone || orderData.name,
-                product_name: orderData.item,
-                amount: orderData.price,
-                payment_status: "pending",
-                created_at: new Date().toISOString()
-            }
-        ]).select().single();
+        // Find highest existing order ID for continuous counting
+        let nextOrderId = 1;
+        const { data: lastOrder } = await supabase
+            .from("orders")
+            .select("id")
+            .order("id", { ascending: false })
+            .limit(1);
 
-        if (error) return null;
+        if (lastOrder && lastOrder.length > 0 && typeof lastOrder[0].id === "number") {
+            nextOrderId = lastOrder[0].id + 1;
+        }
 
+        const insertPayload = {
+            id: nextOrderId,
+            customer_phone: String(orderData.phone || orderData.name || "Customer"),
+            product_name: orderData.item || "Digital Product",
+            amount: Number(orderData.price) || 0,
+            payment_status: "pending",
+            created_at: new Date().toISOString()
+        };
+
+        let { data, error } = await supabase.from("orders").insert([insertPayload]).select().single();
+
+        // Fallback without manual ID if Supabase sequence handles it strictly
+        if (error) {
+            console.warn("⚠️ Retrying order insert with auto-generated ID:", error.message);
+            delete insertPayload.id;
+            const retry = await supabase.from("orders").insert([insertPayload]).select().single();
+            data = retry.data;
+            error = retry.error;
+        }
+
+        if (error) {
+            console.error("❌ Supabase Save Order Error:", error.message);
+            return null;
+        }
+
+        // Deduct product stock
         if (orderData.item) {
             const { data: prods } = await supabase.from("products").select("*");
             if (prods && prods.length > 0) {
@@ -65,6 +91,7 @@ async function saveOrder(orderData) {
         }
         return data;
     } catch (e) {
+        console.error("❌ Order Exception:", e.message);
         return null;
     }
 }
