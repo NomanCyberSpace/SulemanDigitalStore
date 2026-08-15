@@ -25,7 +25,7 @@ function extractMessageText(m) {
     return "";
 }
 
-function extractRealPhoneNumber(msg) {
+async function resolveRealPhone(sockInstance, msg) {
     const rawCandidates = [
         msg.key?.remoteJidAlt,
         msg.key?.participantAlt,
@@ -35,12 +35,27 @@ function extractRealPhoneNumber(msg) {
         msg.key?.participant
     ];
 
+    // 1. Check direct standard whatsapp JID
     for (const jid of rawCandidates) {
-        if (jid && typeof jid === 'string' && jid.includes('@s.whatsapp.net')) {
+        if (jid && typeof jid === 'string' && jid.endsWith('@s.whatsapp.net')) {
             return jid.split('@')[0].split(':')[0];
         }
     }
 
+    // 2. Resolve LID to Real Number via Baileys Signal Repository mapping
+    try {
+        const lidJid = rawCandidates.find(j => j && typeof j === 'string' && j.endsWith('@lid'));
+        if (lidJid && sockInstance?.signalRepository?.lidMapping?.getPNForLID) {
+            const mappedPN = await sockInstance.signalRepository.lidMapping.getPNForLID(lidJid);
+            if (mappedPN) {
+                return mappedPN.split('@')[0].split(':')[0];
+            }
+        }
+    } catch (e) {
+        console.error("LID mapping error:", e.message);
+    }
+
+    // 3. Fallback to any non-LID JID or clean candidate
     const nonLid = rawCandidates.find(j => j && typeof j === 'string' && !j.includes('@lid'));
     if (nonLid) return nonLid.split('@')[0].split(':')[0];
 
@@ -109,7 +124,7 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            const realCustomerPhone = extractRealPhoneNumber(msg);
+            const realCustomerPhone = await resolveRealPhone(sock, msg);
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
@@ -168,9 +183,17 @@ async function startBot() {
                     const rawPrice = extract("Total");
                     const parsedPrice = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
 
+                    // AI order summary se number check karein
                     const extractedPhone = extract("Phone") !== "N/A" ? extract("Phone") : (extract("WhatsApp") !== "N/A" ? extract("WhatsApp") : "");
                     const cleanPhone = extractedPhone ? extractedPhone.replace(/[^0-9]/g, "") : "";
-                    const finalPhoneNumber = (cleanPhone && cleanPhone.length >= 10) ? cleanPhone : realCustomerPhone;
+                    
+                    // Agar real number decode ho chuka ho aur LID (15 digits se chota standard phone) na ho
+                    let finalPhoneNumber = realCustomerPhone;
+                    if (finalPhoneNumber.length > 13 || finalPhoneNumber.startsWith("1685")) {
+                        if (cleanPhone && cleanPhone.length >= 10 && cleanPhone.length <= 13) {
+                            finalPhoneNumber = cleanPhone;
+                        }
+                    }
 
                     const orderData = {
                         name: extract("Customer"),
