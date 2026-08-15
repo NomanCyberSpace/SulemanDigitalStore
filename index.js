@@ -13,53 +13,6 @@ const processedMsgs = new Set();
 const userState = new Map(); 
 let sock;
 
-// Safepay Checkout Link Generator
-function createSafepayCheckoutUrl(orderId, amount) {
-    const environment = process.env.SAFEPAY_ENVIRONMENT || "sandbox";
-    const publicKey = process.env.SAFEPAY_PUBLIC_KEY || "sec_2dc78e96-c17b-406f-b5f2-747ebcbb5915";
-    
-    const baseUrl = environment === "sandbox" 
-        ? "https://sandbox.api.getsafepay.com/checkout/pay" 
-        : "https://api.getsafepay.com/checkout/pay";
-
-    const params = new URLSearchParams({
-        beacon: publicKey,
-        order_id: orderId.toString(),
-        amount: amount.toString(),
-        currency: "PKR",
-        source: "custom"
-    });
-
-    return `${baseUrl}?${params.toString()}`;
-}
-
-// Safepay Webhook Endpoint
-app.post("/safepay-webhook", async (req, res) => {
-    try {
-        const { tracker, order_id, status } = req.body;
-
-        if (status === "PAID" || status === "COMPLETED") {
-            const { data: updatedOrder } = await supabase
-                .from("orders")
-                .update({ payment_status: "paid" })
-                .eq("id", order_id)
-                .select()
-                .single();
-
-            if (updatedOrder && sock) {
-                const customerJid = `${updatedOrder.customer_phone}@s.whatsapp.net`;
-                await sock.sendMessage(customerJid, {
-                    text: `✅ *Payment Confirmed (Safepay)!*\n\nAap ka Order #${updatedOrder.id} successfully *PAID* ho chuka hai. Hamari team jald aap ko subscription credentials bhej degi. Shukriya!`
-                });
-            }
-        }
-        res.status(200).send("OK");
-    } catch (err) {
-        console.error("Safepay Webhook Error:", err.message);
-        res.status(500).send("Server Error");
-    }
-});
-
 app.get("/", (req, res) => res.send("Bot & Server Active!"));
 app.listen(PORT, () => console.log(`🤖 Server listening on port ${PORT}`));
 
@@ -69,11 +22,6 @@ function extractMessageText(m) {
     if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
     if (m.buttonsResponseMessage?.selectedButtonId) return m.buttonsResponseMessage.selectedButtonId;
     if (m.listResponseMessage?.singleSelectReply?.selectedRowId) return m.listResponseMessage.singleSelectReply.selectedRowId;
-
-    const nativeParams = m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson;
-    if (nativeParams) {
-        try { return JSON.parse(nativeParams).id; } catch (e) {}
-    }
     return "";
 }
 
@@ -165,9 +113,7 @@ async function startBot() {
                 return;
             }
 
-            // 🛑 PRIORITY 3: Manual Trigger Handling
-            const humanTriggerKeywords = ["cmd_human", "3", "human", "insani", "contact human", "agent"];
-            if (humanTriggerKeywords.some(kw => userCmd === kw)) {
+            if (["cmd_human", "3", "human", "insani", "contact human", "agent"].includes(userCmd)) {
                 userState.set(sender, "AWAITING_HUMAN");
                 await sock.sendMessage(sender, { 
                     text: "💬 *Contact Human Agent*\n\nAap apna paigham ya masla yahan tafseel se likhein, hum human agent ko ticket assign kar rahe hain: 👇" 
@@ -175,8 +121,7 @@ async function startBot() {
                 return;
             }
 
-            const reportTriggerKeywords = ["cmd_report", "2", "report", "issue", "masla", "complaint"];
-            if (reportTriggerKeywords.some(kw => userCmd === kw)) {
+            if (["cmd_report", "2", "report", "issue", "masla", "complaint"].includes(userCmd)) {
                 userState.set(sender, "AWAITING_REPORT");
                 await sock.sendMessage(sender, { 
                     text: "📝 *Report an Issue*\n\nBaraye meherbani apne maslay ki tafseel likh kar bhejin taakay hum ticket create kar sakein: 👇" 
@@ -184,7 +129,7 @@ async function startBot() {
                 return;
             }
 
-            // ⚡ DIRECT AI RESPONDER (Instant First Message Reply)
+            // ⚡ AI Pipeline with Instant Order Save
             try {
                 if (!chatMemory.has(sender)) chatMemory.set(sender, []);
                 let history = chatMemory.get(sender);
@@ -200,14 +145,21 @@ async function startBot() {
                         return match ? match[1].trim() : "N/A";
                     };
 
+                    const rawPrice = extract("Total");
+                    const parsedPrice = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
+
                     const orderData = {
                         name: extract("Customer"),
                         phone: realCustomerPhone,
                         item: extract("Items"),
-                        price: parseInt(extract("Total").replace(/[^0-9]/g, "")) || 0
+                        price: parsedPrice
                     };
 
-                    await saveOrder(orderData);
+                    const saved = await saveOrder(orderData);
+                    if (saved) {
+                        console.log(`📦 ORDER SAVED: #${saved.id} - ${orderData.item} (${orderData.phone})`);
+                    }
+
                     cleanReply = aiResponse.split("FINAL_ORDER_START")[0].trim();
                 }
 
