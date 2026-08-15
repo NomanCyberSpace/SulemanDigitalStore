@@ -25,6 +25,25 @@ function extractMessageText(m) {
     return "";
 }
 
+function extractRealPhoneNumber(msg) {
+    const rawCandidates = [
+        msg.key.remoteJidAlt,
+        msg.key.participantAlt,
+        msg.participant,
+        msg.key.remoteJid,
+        msg.key.participant
+    ];
+
+    for (const jid of rawCandidates) {
+        if (jid && typeof jid === 'string' && jid.includes('@s.whatsapp.net')) {
+            return jid.split('@')[0].split(':')[0];
+        }
+    }
+
+    const firstValid = rawCandidates.find(j => j && typeof j === 'string');
+    return firstValid ? firstValid.split('@')[0].split(':')[0] : "Customer";
+}
+
 async function startBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(`./session`);
@@ -86,16 +105,7 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            // ✅ SMART PHONE NUMBER EXTRACTION (LID FILTER)
-            const candidates = [
-                msg.key.remoteJidAlt,
-                msg.key.participantAlt,
-                msg.key.remoteJid,
-                msg.key.participant
-            ];
-            const phoneJid = candidates.find(c => c && c.endsWith("@s.whatsapp.net")) || candidates.find(c => Boolean(c)) || "";
-            const realCustomerPhone = phoneJid.split("@")[0].split(":")[0];
-
+            const realCustomerPhone = extractRealPhoneNumber(msg);
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
