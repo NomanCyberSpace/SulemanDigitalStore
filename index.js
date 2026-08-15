@@ -86,9 +86,15 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            let rawJid = msg.key.remoteJidAlt || msg.key.remoteJid || "";
-            if (msg.key.participant) rawJid = msg.key.participantAlt || msg.key.participant;
-            const realCustomerPhone = rawJid.split("@")[0].split(":")[0];
+            // ✅ SMART PHONE NUMBER EXTRACTION (LID FILTER)
+            const candidates = [
+                msg.key.remoteJidAlt,
+                msg.key.participantAlt,
+                msg.key.remoteJid,
+                msg.key.participant
+            ];
+            const phoneJid = candidates.find(c => c && c.endsWith("@s.whatsapp.net")) || candidates.find(c => Boolean(c)) || "";
+            const realCustomerPhone = phoneJid.split("@")[0].split(":")[0];
 
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
