@@ -1,6 +1,6 @@
 const { getPuterResponse } = require("./puter-ai");
 const { saveOrder, getMenu, saveReport, saveHumanRequest, supabase } = require("./order-db");
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason, jidNormalizedUser } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
 
@@ -25,42 +25,27 @@ function extractMessageText(m) {
     return "";
 }
 
-async function resolveRealPhone(sockInstance, msg) {
-    const rawCandidates = [
-        msg.key?.remoteJidAlt,
-        msg.key?.participantAlt,
-        msg.participantAlt,
-        msg.key?.remoteJid,
+function resolvePhoneNumber(msg) {
+    const key = msg.key;
+    
+    // Check all possible raw locations where Baileys stores the real JID
+    const candidates = [
+        key.remoteJidAlt,
+        key.participantAlt,
         msg.participant,
-        msg.key?.participant
+        key.participant,
+        key.remoteJid
     ];
 
-    // 1. Check direct standard whatsapp JID
-    for (const jid of rawCandidates) {
-        if (jid && typeof jid === 'string' && jid.endsWith('@s.whatsapp.net')) {
-            return jid.split('@')[0].split(':')[0];
+    for (const jid of candidates) {
+        if (jid && typeof jid === 'string' && jid.includes('@s.whatsapp.net')) {
+            return jidNormalizedUser(jid).split('@')[0].split(':')[0];
         }
     }
 
-    // 2. Resolve LID to Real Number via Baileys Signal Repository mapping
-    try {
-        const lidJid = rawCandidates.find(j => j && typeof j === 'string' && j.endsWith('@lid'));
-        if (lidJid && sockInstance?.signalRepository?.lidMapping?.getPNForLID) {
-            const mappedPN = await sockInstance.signalRepository.lidMapping.getPNForLID(lidJid);
-            if (mappedPN) {
-                return mappedPN.split('@')[0].split(':')[0];
-            }
-        }
-    } catch (e) {
-        console.error("LID mapping error:", e.message);
-    }
-
-    // 3. Fallback to any non-LID JID or clean candidate
-    const nonLid = rawCandidates.find(j => j && typeof j === 'string' && !j.includes('@lid'));
-    if (nonLid) return nonLid.split('@')[0].split(':')[0];
-
-    const fallback = rawCandidates.find(j => j && typeof j === 'string');
-    return fallback ? fallback.split('@')[0].split(':')[0] : "Customer";
+    // Fallback if only LID exists
+    const fallback = candidates.find(j => j && typeof j === 'string');
+    return fallback ? fallback.split('@')[0].split(':')[0] : "Unknown";
 }
 
 async function startBot() {
@@ -124,7 +109,7 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            const realCustomerPhone = await resolveRealPhone(sock, msg);
+            const realCustomerPhone = resolvePhoneNumber(msg);
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
@@ -164,7 +149,7 @@ async function startBot() {
                 return;
             }
 
-            // ⚡ AI Pipeline with Instant Order Save
+            // ⚡ AI Pipeline with Native Automatic Phone Number Capture
             try {
                 if (!chatMemory.has(sender)) chatMemory.set(sender, []);
                 let history = chatMemory.get(sender);
@@ -183,21 +168,9 @@ async function startBot() {
                     const rawPrice = extract("Total");
                     const parsedPrice = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
 
-                    // AI order summary se number check karein
-                    const extractedPhone = extract("Phone") !== "N/A" ? extract("Phone") : (extract("WhatsApp") !== "N/A" ? extract("WhatsApp") : "");
-                    const cleanPhone = extractedPhone ? extractedPhone.replace(/[^0-9]/g, "") : "";
-                    
-                    // Agar real number decode ho chuka ho aur LID (15 digits se chota standard phone) na ho
-                    let finalPhoneNumber = realCustomerPhone;
-                    if (finalPhoneNumber.length > 13 || finalPhoneNumber.startsWith("1685")) {
-                        if (cleanPhone && cleanPhone.length >= 10 && cleanPhone.length <= 13) {
-                            finalPhoneNumber = cleanPhone;
-                        }
-                    }
-
                     const orderData = {
                         name: extract("Customer"),
-                        phone: finalPhoneNumber,
+                        phone: realCustomerPhone,
                         item: extract("Items"),
                         price: parsedPrice
                     };
