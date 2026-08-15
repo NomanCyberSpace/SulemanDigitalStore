@@ -27,11 +27,12 @@ function extractMessageText(m) {
 
 function extractRealPhoneNumber(msg) {
     const rawCandidates = [
-        msg.key.remoteJidAlt,
-        msg.key.participantAlt,
+        msg.key?.remoteJidAlt,
+        msg.key?.participantAlt,
+        msg.participantAlt,
+        msg.key?.remoteJid,
         msg.participant,
-        msg.key.remoteJid,
-        msg.key.participant
+        msg.key?.participant
     ];
 
     for (const jid of rawCandidates) {
@@ -40,8 +41,11 @@ function extractRealPhoneNumber(msg) {
         }
     }
 
-    const firstValid = rawCandidates.find(j => j && typeof j === 'string');
-    return firstValid ? firstValid.split('@')[0].split(':')[0] : "Customer";
+    const nonLid = rawCandidates.find(j => j && typeof j === 'string' && !j.includes('@lid'));
+    if (nonLid) return nonLid.split('@')[0].split(':')[0];
+
+    const fallback = rawCandidates.find(j => j && typeof j === 'string');
+    return fallback ? fallback.split('@')[0].split(':')[0] : "Customer";
 }
 
 async function startBot() {
@@ -164,9 +168,13 @@ async function startBot() {
                     const rawPrice = extract("Total");
                     const parsedPrice = parseFloat(rawPrice.replace(/[^0-9.]/g, "")) || 0;
 
+                    const extractedPhone = extract("Phone") !== "N/A" ? extract("Phone") : (extract("WhatsApp") !== "N/A" ? extract("WhatsApp") : "");
+                    const cleanPhone = extractedPhone ? extractedPhone.replace(/[^0-9]/g, "") : "";
+                    const finalPhoneNumber = (cleanPhone && cleanPhone.length >= 10) ? cleanPhone : realCustomerPhone;
+
                     const orderData = {
                         name: extract("Customer"),
-                        phone: realCustomerPhone,
+                        phone: finalPhoneNumber,
                         item: extract("Items"),
                         price: parsedPrice
                     };
