@@ -25,27 +25,37 @@ function extractMessageText(m) {
     return "";
 }
 
-function resolvePhoneNumber(msg) {
-    const key = msg.key;
-    
-    // Check all possible raw locations where Baileys stores the real JID
-    const candidates = [
-        key.remoteJidAlt,
-        key.participantAlt,
+// 🔍 DEEP PHONE NUMBER EXTRACTOR
+function extractRealCustomerPhone(msg) {
+    // 1. Direct Phone Number properties injected by WhatsApp
+    if (msg.key?.senderPn) {
+        return msg.key.senderPn.replace(/[^0-9]/g, "");
+    }
+    if (msg.senderPn) {
+        return msg.senderPn.replace(/[^0-9]/g, "");
+    }
+
+    // 2. Scan all possible JID parameters for @s.whatsapp.net
+    const jidPool = [
+        msg.key?.remoteJidAlt,
+        msg.key?.participantAlt,
         msg.participant,
-        key.participant,
-        key.remoteJid
+        msg.key?.participant,
+        msg.key?.remoteJid
     ];
 
-    for (const jid of candidates) {
-        if (jid && typeof jid === 'string' && jid.includes('@s.whatsapp.net')) {
-            return jidNormalizedUser(jid).split('@')[0].split(':')[0];
+    for (const jid of jidPool) {
+        if (jid && typeof jid === 'string') {
+            if (jid.includes('@s.whatsapp.net')) {
+                const num = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, "");
+                if (num && num.length <= 14) return num; // Valid international phone number length
+            }
         }
     }
 
-    // Fallback if only LID exists
-    const fallback = candidates.find(j => j && typeof j === 'string');
-    return fallback ? fallback.split('@')[0].split(':')[0] : "Unknown";
+    // 3. Fallback check on remoteJid
+    const fallback = msg.key?.remoteJid || "";
+    return fallback.split('@')[0].split(':')[0].replace(/[^0-9]/g, "");
 }
 
 async function startBot() {
@@ -109,7 +119,8 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            const realCustomerPhone = resolvePhoneNumber(msg);
+            // Accurate Phone Number
+            const realCustomerPhone = extractRealCustomerPhone(msg);
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
@@ -177,7 +188,7 @@ async function startBot() {
 
                     const saved = await saveOrder(orderData);
                     if (saved) {
-                        console.log(`📦 ORDER SAVED: #${saved.id} - ${orderData.item} (${orderData.phone})`);
+                        console.log(`📦 ORDER #${saved.id} SAVED WITH PHONE: ${orderData.phone}`);
                     }
 
                     cleanReply = aiResponse.split("FINAL_ORDER_START")[0].trim();
