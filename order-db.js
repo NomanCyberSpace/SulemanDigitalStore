@@ -1,3 +1,6 @@
+const WebSocket = require("ws");
+global.WebSocket = WebSocket;
+
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = "https://kvcqsmqqcmlbgrtgoeca.supabase.co";
