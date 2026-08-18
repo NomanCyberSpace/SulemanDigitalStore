@@ -1,6 +1,6 @@
 const { getPuterResponse } = require("./puter-ai");
 const { saveOrder, getMenu, saveReport, saveHumanRequest, supabase } = require("./order-db");
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason, jidNormalizedUser } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require("express");
 
@@ -25,37 +25,27 @@ function extractMessageText(m) {
     return "";
 }
 
-// 🔍 DEEP PHONE NUMBER EXTRACTOR
-function extractRealCustomerPhone(msg) {
-    // 1. Direct Phone Number properties injected by WhatsApp
-    if (msg.key?.senderPn) {
-        return msg.key.senderPn.replace(/[^0-9]/g, "");
-    }
-    if (msg.senderPn) {
-        return msg.senderPn.replace(/[^0-9]/g, "");
-    }
-
-    // 2. Scan all possible JID parameters for @s.whatsapp.net
-    const jidPool = [
+function extractRealPhoneNumber(msg) {
+    const rawCandidates = [
         msg.key?.remoteJidAlt,
         msg.key?.participantAlt,
+        msg.participantAlt,
+        msg.key?.remoteJid,
         msg.participant,
-        msg.key?.participant,
-        msg.key?.remoteJid
+        msg.key?.participant
     ];
 
-    for (const jid of jidPool) {
-        if (jid && typeof jid === 'string') {
-            if (jid.includes('@s.whatsapp.net')) {
-                const num = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, "");
-                if (num && num.length <= 14) return num; // Valid international phone number length
-            }
+    for (const jid of rawCandidates) {
+        if (jid && typeof jid === 'string' && jid.includes('@s.whatsapp.net')) {
+            return jid.split('@')[0].split(':')[0];
         }
     }
 
-    // 3. Fallback check on remoteJid
-    const fallback = msg.key?.remoteJid || "";
-    return fallback.split('@')[0].split(':')[0].replace(/[^0-9]/g, "");
+    const nonLid = rawCandidates.find(j => j && typeof j === 'string' && !j.includes('@lid'));
+    if (nonLid) return nonLid.split('@')[0].split(':')[0];
+
+    const firstValid = rawCandidates.find(j => j && typeof j === 'string');
+    return firstValid ? firstValid.split('@')[0].split(':')[0] : "Customer";
 }
 
 async function startBot() {
@@ -119,8 +109,7 @@ async function startBot() {
             const text = extractMessageText(msg.message);
             if (!text.trim()) return;
 
-            // Accurate Phone Number
-            const realCustomerPhone = extractRealCustomerPhone(msg);
+            const realCustomerPhone = extractRealPhoneNumber(msg);
             const userCmd = text.trim().toLowerCase();
             const currentState = userState.get(sender);
 
@@ -160,7 +149,7 @@ async function startBot() {
                 return;
             }
 
-            // ⚡ AI Pipeline with Native Automatic Phone Number Capture
+            // ⚡ AI Pipeline with Instant Order Save
             try {
                 if (!chatMemory.has(sender)) chatMemory.set(sender, []);
                 let history = chatMemory.get(sender);
@@ -188,7 +177,7 @@ async function startBot() {
 
                     const saved = await saveOrder(orderData);
                     if (saved) {
-                        console.log(`📦 ORDER #${saved.id} SAVED WITH PHONE: ${orderData.phone}`);
+                        console.log(`📦 ORDER SAVED: #${saved.id} - ${orderData.item} (${orderData.phone})`);
                     }
 
                     cleanReply = aiResponse.split("FINAL_ORDER_START")[0].trim();

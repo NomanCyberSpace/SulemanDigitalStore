@@ -1,17 +1,8 @@
 require("dotenv").config();
-const { init } = require("@heyputer/puter.js/src/init.cjs");
-
-let puter;
-try {
-    if (process.env.PUTER_AUTH_TOKEN) {
-        puter = init(process.env.PUTER_AUTH_TOKEN);
-    }
-} catch (err) {
-    console.error("Puter Init Error:", err.message);
-}
 
 async function getPuterResponse(userMessage, history, dynamicMenu) {
-    if (!process.env.PUTER_AUTH_TOKEN) {
+    const token = process.env.PUTER_AUTH_TOKEN;
+    if (!token) {
         return "System config error: API Token missing.";
     }
 
@@ -32,15 +23,29 @@ You are the Senior Executive Sales & Digital Marketing Manager for "Suleman Digi
   4. 🔥 Discounts & Offers
 
 🛍️ STEP-BY-STEP SERVICES SALES FLOW (STRICT SEQUENCE):
-1. **STEP 1 - SHOW ALL DATABASE APP NAMES:** Read "LIVE DATABASE CATALOG" below. Extract EVERY available app/platform name and show in a clean list without prices/stock yet. End with: "Kya aap in mein se kisi specific service ka intekhab karna chahenge? 👇"
-2. **STEP 2 - SPECIFIC APP PLANS & PRICING:** When customer chooses an app, show its plans, durations, and pricing from the catalog. Ask: "Kya aap ko is ki Mazeed Details / Terms chahiye? 📜"
-3. **STEP 3 - CUSTOMER NAME:** Politely ask for customer's **Name**.
-4. **STEP 4 - QUANTITY SELECTION:** Ask how many screens/accounts (Quantity) they need.
-5. **STEP 5 - BILL SUMMARY:** Present neat **BILL SUMMARY** (Customer Name, Selected Service, Quantity, Total Amount).
+1. **STEP 1 - SHOW ALL DATABASE APP NAMES (COMPLETE LIST):**
+   When customer selects Option 1 (Services / Subscriptions), read the ENTIRE "LIVE DATABASE CATALOG" provided below. Extract EVERY SINGLE available app/platform name (e.g., 🌸 CapCut, 🌸 Netflix, 🌸 Canva, 🌸 Gemini AI, 🌸 Surfshark VPN, 🌸 QuillBot, 🌸 Grammarly, 🌸 Outlook Mail, 🌸 ChatGPT Plus, 🌸 Replit Core, 🌸 LinkedIn, etc.) without skipping any item.
+   ⚠️ STRICT RULES FOR STEP 1:
+   - Output EVERY available app/product name from catalog in one clean list.
+   - Do NOT show prices, stock counts, or plan details yet in Step 1.
+   - End Step 1 with: "Kya aap in mein se kisi specific service ka intekhab karna chahenge? 👇"
+
+2. **STEP 2 - SPECIFIC APP PLANS & PRICING:** 
+   When the customer chooses a specific app (e.g. Netflix, Canva, etc.), show all its available plans, durations, and pricing from the catalog. Ask politely: "Kya aap ko is ki Mazeed Details / Terms chahiye? 📜"
+
+3. **STEP 3 - CUSTOMER NAME:** 
+   Ask for the customer's **Name** respectfully.
+
+4. **STEP 4 - QUANTITY SELECTION:** 
+   Ask how many screens/accounts (Quantity) they need.
+
+5. **STEP 5 - BILL SUMMARY:** 
+   Present a neat **BILL SUMMARY** (Customer Name, Selected Service, Quantity, Total Amount).
+
 6. **STEP 6 - ORDER CONFIRMATION & PAYMENT TRIGGER:** 
-   When customer confirms with "yes", "confirm", "haan", "ok", "proceed", "done":
+   When the customer confirms with words like "yes", "confirm", "haan", "ok", "proceed", "done":
    - Provide the payment details politely.
-   - ⚠️ CRITICAL RULE: Append this EXACT block at the end of response:
+   - ⚠️ CRITICAL TECHNICAL RULE: You MUST append this EXACT block at the very end of your response:
 
 FINAL_ORDER_START
 Customer: [Customer Name]
@@ -49,7 +54,7 @@ Total: [Total Numeric Price]
 FINAL_ORDER_END
 
 🔥 DISCOUNTS & SPECIAL OFFERS (OPTION 4):
-Highlight active discounts from catalog showing Original Price vs Discounted Price.
+Highlight only the items with active discounts from the catalog in an attractive, sales-driven manner showing Original Price vs Discounted Price.
 
 💳 OFFICIAL PAYMENT DETAILS:
 💸 𝙋𝘼𝙔𝙈𝙀𝙉𝙏 𝘿𝙀𝙏𝘼𝙄𝙇𝙎 💸
@@ -69,23 +74,43 @@ ${dynamicMenu}
 `;
 
     try {
-        if (!puter) puter = init(process.env.PUTER_AUTH_TOKEN);
-
         const messages = [
             { role: "system", content: SYSTEM_PROMPT },
-            ...history,
+            ...(Array.isArray(history) ? history : []),
             { role: "user", content: userMessage }
         ];
 
-        const response = await puter.ai.chat(messages, {
-            model: "gpt-4o-mini",
-            temperature: 0.2,
-            max_tokens: 850
+        const response = await fetch("https://api.puter.com/drivers/call", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                interface: "puter-chat-completion",
+                driver: "openai-completion",
+                test_mode: false,
+                method: "complete",
+                args: {
+                    model: "gpt-4o-mini",
+                    messages: messages,
+                    temperature: 0.2,
+                    max_tokens: 850
+                }
+            })
         });
 
-        return response.message.content || "Maafi chahta hoon, thora technical issue hai. 🙏";
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Puter HTTP Error:", response.status, errText);
+            return "Maafi chahta hoon, thora technical issue hai. 🙏";
+        }
+
+        const data = await response.json();
+        const aiText = data?.result?.message?.content || data?.result?.text || data?.message?.content;
+        return aiText || "Maafi chahta hoon, thora technical issue hai. 🙏";
     } catch (error) {
-        console.error("Puter API Error:", error.message);
+        console.error("Puter API Exception:", error.message);
         return "Maafi chahta hoon, network issue ki waja se connection slow hai. Dobara try karein. 🙏";
     }
 }
