@@ -4,6 +4,15 @@ const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion,
 const pino = require("pino");
 const express = require("express");
 
+// 🛡️ ANTI-CRASH PROCESS HANDLERS
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("⚠️ Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+    console.error("⚠️ Uncaught Exception:", err.message);
+});
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -27,6 +36,8 @@ function extractMessageText(m) {
 
 function extractRealPhoneNumber(msg) {
     const rawCandidates = [
+        msg.key?.senderPn,
+        msg.senderPn,
         msg.key?.remoteJidAlt,
         msg.key?.participantAlt,
         msg.participantAlt,
@@ -51,7 +62,7 @@ function extractRealPhoneNumber(msg) {
 async function startBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(`./session`);
-        const { version } = await fetchLatestBaileysVersion();
+        const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
         sock = makeWASocket({
             version,
@@ -75,7 +86,7 @@ async function startBot() {
                         const code = await sock.requestPairingCode(phoneNumber);
                         console.log(`\n✅ YOUR WHATSAPP PAIRING CODE: ${code}\n`);
                     } catch (pairingError) {
-                        console.error("❌ Error generating pairing code:", pairingError.message);
+                        console.error("❌ Error generating pairing code:", pairingError.message || pairingError);
                     }
                 }, 10000);
             }
@@ -84,7 +95,7 @@ async function startBot() {
         sock.ev.on("connection.update", async (update) => {
             const { connection, lastDisconnect } = update;
             if (connection === "close") {
-                const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(), 5000);
             } else if (connection === "open") {
                 console.log("\n🚀 SULEMAN DIGITAL STORE BOT IS LIVE!\n");
