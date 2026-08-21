@@ -1,10 +1,18 @@
 require("dotenv").config();
+const { init } = require("@heyputer/puter.js/src/init.cjs");
+
+let puter;
+try {
+    if (process.env.PUTER_AUTH_TOKEN) {
+        puter = init(process.env.PUTER_AUTH_TOKEN);
+    }
+} catch (err) {
+    console.error("Puter Init Error:", err.message);
+}
 
 async function getPuterResponse(userMessage, history, dynamicMenu) {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-
-    if (!apiKey) {
-        return "System config error: OPENROUTER_API_KEY missing in .env file.";
+    if (!process.env.PUTER_AUTH_TOKEN) {
+        return "System config error: API Token missing.";
     }
 
     const SYSTEM_PROMPT = `
@@ -25,13 +33,13 @@ You are the Senior Executive Sales & Digital Marketing Manager for "Suleman Digi
 
 🛍️ STEP-BY-STEP SERVICES SALES FLOW (STRICT SEQUENCE):
 1. **STEP 1 - SHOW ALL DATABASE APP NAMES:** Read "LIVE DATABASE CATALOG" below. Extract EVERY available app/platform name and show in a clean list without prices/stock yet. End with: "Kya aap in mein se kisi specific service ka intekhab karna chahenge? 👇"
-2. **STEP 2 - SPECIFIC APP PLANS & PRICING:** When customer chooses an app, show its plans, durations, and pricing from the catalog. Ask: "Kya aap ko is ki Mazeed Details / Terms chahiye? 📜"
+2. **STEP 2 - SPECIFIC APP PLANS & PRICING:** When customer chooses an app, show its plans, durations, and pricing strictly from the catalog. Ask: "Kya aap ko is ki Mazeed Details / Terms chahiye? 📜"
 3. **STEP 3 - CUSTOMER NAME:** Politely ask for customer's **Name**.
 4. **STEP 4 - QUANTITY SELECTION:** Ask how many screens/accounts (Quantity) they need.
 5. **STEP 5 - BILL SUMMARY:** Present neat **BILL SUMMARY** (Customer Name, Selected Service, Quantity, Total Amount).
 6. **STEP 6 - ORDER CONFIRMATION & PAYMENT TRIGGER:** 
    When customer confirms with "yes", "confirm", "haan", "ok", "proceed", "done":
-   - Provide payment details politely.
+   - Provide the payment details politely.
    - ⚠️ CRITICAL RULE: Append this EXACT block at the end of response:
 
 FINAL_ORDER_START
@@ -40,8 +48,14 @@ Items: [Item Name and Quantity]
 Total: [Total Numeric Price]
 FINAL_ORDER_END
 
+🛑 STRICT PRICING & DATABASE INTEGRITY RULE:
+- NEVER invent your own prices and NEVER reduce the price below the exact amount given in the "LIVE DATABASE CATALOG".
+- The final price charged to the customer and recorded in "Total:" MUST ALWAYS match the exact catalog price.
+
 🔥 DISCOUNTS & SPECIAL OFFERS (OPTION 4):
-Highlight active discounts from catalog showing Original Price vs Discounted Price.
+- Jab customer Option 4 choose kare ya discount mange:
+  Aap ne catalog ki exact price se kam nahi karna. Marketing pitch ke tor par regular/market price ko zyada show karna hai aur catalog wali price ko discounted price bata kar present karna hai (Example: "Market Rate: Rs. [Higher] ❌ | Special Offer Rate: Rs. [Catalog Exact Price] ✅").
+- Is tarah customer ko discount bhi feel hoga aur service aapke database ki exact real price par hi sale hogi.
 
 💳 OFFICIAL PAYMENT DETAILS:
 💸 𝙋𝘼𝙔𝙈𝙀𝙉𝙏 𝘿𝙀𝙏𝘼𝙄𝙇𝙎 💸
@@ -61,42 +75,24 @@ ${dynamicMenu}
 `;
 
     try {
+        if (!puter) puter = init(process.env.PUTER_AUTH_TOKEN);
+
         const messages = [
             { role: "system", content: SYSTEM_PROMPT },
             ...history,
             { role: "user", content: userMessage }
         ];
 
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://sulemanstore.netlify.app",
-                "X-Title": "Suleman Digital Store"
-            },
-            body: JSON.stringify({
-                model: "meta-llama/llama-3.3-70b-instruct:free",
-                messages: messages,
-                temperature: 0.2,
-                max_tokens: 850
-            })
+        const response = await puter.ai.chat(messages, {
+            model: "gpt-4o-mini",
+            temperature: 0.2,
+            max_tokens: 850
         });
 
-        const data = await response.json();
-
-        if (data.choices && data.choices[0]?.message?.content) {
-            return data.choices[0].message.content;
-        }
-
-        if (data.error) {
-            console.error("OpenRouter API Error:", data.error.message);
-        }
-
-        return "Maafi chahta hoon, thora technical issue hai. 🙏";
+        return response.message.content || "Maafi chahta hoon, thora technical issue hai. 🙏";
     } catch (error) {
-        console.error("Fetch Error:", error.message);
-        return "Maafi chahta hoon, network connection slow hai. Dobara try karein. 🙏";
+        console.error("Puter API Error:", error.message);
+        return "Maafi chahta hoon, network issue ki waja se connection slow hai. Dobara try karein. 🙏";
     }
 }
 
